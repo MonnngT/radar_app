@@ -2,25 +2,27 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import io  # 新增：用于处理图像内存流
+import io
 
 # 页面配置
-st.set_page_config(page_title="扇叶外径极坐标分析", layout="wide")
-st.title("🎯 扇叶根部外径极坐标自动分析系统")
+st.set_page_config(page_title="扇叶外径极坐标分析系统", layout="wide")
+st.title("🎯 扇叶根部外径极坐标分析系统")
 
 # 侧边栏：参数与型号选择
 with st.sidebar:
     st.header("⚙️ 参数设置")
     blade_type = st.radio("选择扇叶型号", ["4Z 系列 (4ZL / 4ZR)", "7ZL 系列"])
-    report_title = st.text_input("图表标题", f"{blade_type[:2]} Outer Diameter")
+    # 默认英文标题
+    default_title = f"{blade_type[:2]} Outer Diameter"
+    report_title = st.text_input("图表标题 (Title)", default_title)
     
     st.markdown("---")
     st.write("💡 **使用提示**：")
-    st.write("您可以在右侧的表格中直接修改数据，或者从 Excel 复制一列数据直接粘贴进表格的 `实测外径 (mm)` 列中，图表会实时自动刷新。")
+    st.write("在右侧表格中修改数据，或从 Excel 复制一列数据粘贴到 `实测外径 (mm)` 列，图表会实时刷新。")
 
 # 核心绘图函数
 def create_radar(title, angles, values, has_pins, interval):
-    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={'projection': 'polar'})
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
 
     # 1. 计算不良率
     oot_count = sum(1 for v in values if v < 39.1 or v > 39.3)
@@ -38,7 +40,7 @@ def create_radar(title, angles, values, has_pins, interval):
     ax.fill_between(np.linspace(np.deg2rad(340), np.deg2rad(360+20), 50), 38.6, 39.5, color='gray', alpha=0.25, label='Flat Area')
     ax.fill_between(np.linspace(np.deg2rad(160), np.deg2rad(200), 50), 38.6, 39.5, color='gray', alpha=0.25)
 
-    # 4. 如果是 7ZL，添加左右黄色顶针区域 (Pin Area)
+    # 4. 仅 7ZL 添加左右黄色顶针区域 (Pin Area)
     if has_pins:
         ax.fill_between(np.linspace(np.deg2rad(70), np.deg2rad(110), 50), 38.6, 39.5, color='gold', alpha=0.35, label='Pin Area')
         ax.fill_between(np.linspace(np.deg2rad(250), np.deg2rad(290), 50), 38.6, 39.5, color='gold', alpha=0.35)
@@ -77,9 +79,10 @@ def create_radar(title, angles, values, has_pins, interval):
 
     # 8. 不良率信息框
     defect_text = f"OOT Points: {oot_count}\nOOT Area: {oot_area}°\nDefect Ratio: {oot_area}/360 = {oot_percentage:.1f}%"
-    plt.figtext(0.02, 0.98, defect_text, fontsize=12, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='top', ha='left')
+    plt.figtext(0.02, 0.98, defect_text, fontsize=13, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='top', ha='left')
 
-    ax.set_title(title, va='bottom', fontsize=18, fontweight='bold', pad=35)
+    # 9. 题头设置（pad=45 完美解决遮挡问题）
+    ax.set_title(title, va='bottom', fontsize=20, fontweight='bold', pad=45)
     ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.15), fontsize=10)
     
     return fig
@@ -87,7 +90,7 @@ def create_radar(title, angles, values, has_pins, interval):
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-# 根据选择初始化默认数据
+# 根据选择初始化默认数据 (应用了140度平摊与十字对称逻辑)
 if blade_type == "4Z 系列 (4ZL / 4ZR)":
     default_angles = [20, 48, 76, 104, 132, 160, 200, 228, 256, 284, 312, 340]
     default_values = [39.25, 39.24, 39.20, 39.15, 39.13, 39.08, 38.74, 38.85, 38.93, 39.06, 39.16, 39.20]
@@ -106,12 +109,7 @@ df = pd.DataFrame({
 
 with col1:
     st.subheader("📝 数据录入区")
-    edited_df = st.data_editor(
-        df, 
-        num_rows="fixed", 
-        use_container_width=True,
-        hide_index=True
-    )
+    edited_df = st.data_editor(df, num_rows="fixed", use_container_width=True, hide_index=True)
 
 with col2:
     st.subheader("📊 实时分析图表")
@@ -120,21 +118,21 @@ with col2:
     
     # 生成图表
     fig = create_radar(report_title, current_angles, current_values, has_pins, interval)
-    st.pyplot(fig, clear_figure=True)
     
-    # ----------------- 新增：导出下载功能 -----------------
-    # 将图表保存到内存中的缓冲区
+    # 保存到内存用于下载
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
     buf.seek(0)
     
-    st.markdown("<br>", unsafe_allow_html=True) # 增加一点间距
+    # 在网页渲染
+    st.pyplot(fig, clear_figure=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    # 创建下载按钮
+    # 导出下载按钮
     st.download_button(
         label="⬇️ 一键下载高清分析图 (PNG)",
         data=buf,
         file_name=f"{report_title.replace(' ', '_')}_Analysis.png",
         mime="image/png",
-        use_container_width=True # 让按钮变宽，更显眼
+        use_container_width=True
     )
