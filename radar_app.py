@@ -17,11 +17,19 @@ with st.sidebar:
     report_title = st.text_input("图表标题 (Title)", default_title)
     
     st.markdown("---")
+    st.header("🎨 特征区域显示")
+    # 新增：自由选择是否显示平面和顶针区域
+    show_flats = st.checkbox("显示平面区域 (上下灰色)", value=True)
+    # 默认 7ZL 勾选顶针，4Z 不勾选，但用户可以自由修改
+    default_pins = True if blade_type == "7ZL 系列" else False
+    show_pins = st.checkbox("显示顶针区域 (左右黄色)", value=default_pins)
+    
+    st.markdown("---")
     st.write("💡 **使用提示**：")
     st.write("在右侧表格中修改数据，或从 Excel 复制一列数据粘贴到 `实测外径 (mm)` 列，图表会实时刷新。")
 
-# 核心绘图函数
-def create_radar(title, angles, values, has_pins, interval):
+# 核心绘图函数（加入了 show_flats 和 show_pins 参数）
+def create_radar(title, angles, values, show_flats, show_pins, interval):
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
 
     # 1. 计算不良率
@@ -36,12 +44,13 @@ def create_radar(title, angles, values, has_pins, interval):
     ax.plot(theta_full, np.full_like(theta_full, 39.1), color='red', linestyle='--', linewidth=1.5)
     ax.fill_between(theta_full, 39.1, 39.3, color='green', alpha=0.1)
 
-    # 3. 绘制统一的上下灰色区域 (Flat Area)
-    ax.fill_between(np.linspace(np.deg2rad(340), np.deg2rad(360+20), 50), 38.6, 39.5, color='gray', alpha=0.25, label='Flat Area')
-    ax.fill_between(np.linspace(np.deg2rad(160), np.deg2rad(200), 50), 38.6, 39.5, color='gray', alpha=0.25)
+    # 3. 根据开关绘制上下灰色区域 (Flat Area)
+    if show_flats:
+        ax.fill_between(np.linspace(np.deg2rad(340), np.deg2rad(360+20), 50), 38.6, 39.5, color='gray', alpha=0.25, label='Flat Area')
+        ax.fill_between(np.linspace(np.deg2rad(160), np.deg2rad(200), 50), 38.6, 39.5, color='gray', alpha=0.25)
 
-    # 4. 仅 7ZL 添加左右黄色顶针区域 (Pin Area)
-    if has_pins:
+    # 4. 根据开关绘制左右黄色顶针区域 (Pin Area)
+    if show_pins:
         ax.fill_between(np.linspace(np.deg2rad(70), np.deg2rad(110), 50), 38.6, 39.5, color='gold', alpha=0.35, label='Pin Area')
         ax.fill_between(np.linspace(np.deg2rad(250), np.deg2rad(290), 50), 38.6, 39.5, color='gold', alpha=0.35)
 
@@ -81,8 +90,10 @@ def create_radar(title, angles, values, has_pins, interval):
     defect_text = f"OOT Points: {oot_count}\nOOT Area: {oot_area}°\nDefect Ratio: {oot_area}/360 = {oot_percentage:.1f}%"
     plt.figtext(0.02, 0.98, defect_text, fontsize=13, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='top', ha='left')
 
-    # 9. 题头设置（pad=45 完美解决遮挡问题）
+    # 9. 题头设置（pad=45 解决遮挡）
     ax.set_title(title, va='bottom', fontsize=20, fontweight='bold', pad=45)
+    
+    # 动态调整图例位置，防止重叠
     ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.15), fontsize=10)
     
     return fig
@@ -90,17 +101,15 @@ def create_radar(title, angles, values, has_pins, interval):
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-# 根据选择初始化默认数据 (应用了140度平摊与十字对称逻辑)
+# 根据选择初始化默认数据
 if blade_type == "4Z 系列 (4ZL / 4ZR)":
     default_angles = [20, 48, 76, 104, 132, 160, 200, 228, 256, 284, 312, 340]
     default_values = [39.25, 39.24, 39.20, 39.15, 39.13, 39.08, 38.74, 38.85, 38.93, 39.06, 39.16, 39.20]
     interval = 28
-    has_pins = False
 else:
     default_angles = [30, 60, 120, 150, 210, 240, 300, 330]
     default_values = [39.08, 39.15, 39.13, 39.21, 39.06, 39.15, 39.17, 39.21]
     interval = 30
-    has_pins = True
 
 df = pd.DataFrame({
     "测量角度 (°)": default_angles,
@@ -116,8 +125,8 @@ with col2:
     current_angles = edited_df["测量角度 (°)"].tolist()
     current_values = edited_df["实测外径 (mm)"].tolist()
     
-    # 生成图表
-    fig = create_radar(report_title, current_angles, current_values, has_pins, interval)
+    # 生成图表 (传入开关参数)
+    fig = create_radar(report_title, current_angles, current_values, show_flats, show_pins, interval)
     
     # 保存到内存用于下载
     buf = io.BytesIO()
