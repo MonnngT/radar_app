@@ -100,19 +100,19 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-default_angles = [30, 60, 120, 150, 210, 240, 300, 330]
+# 初始数据
+default_angles = [30.0, 60.0, 120.0, 150.0, 210.0, 240.0, 300.0, 330.0]
 default_values = [39.08, 39.15, 39.13, 39.21, 39.06, 39.15, 39.17, 39.21]
 
+# 🌟 终极防崩溃：强制声明两列都为 float64，兼容任何空白(NaN)输入 🌟
 df = pd.DataFrame({
-    "测量角度 (°)": default_angles,
-    "实测数据 (mm)": default_values
+    "测量角度 (°)": pd.Series(default_angles, dtype='float64'),
+    "实测数据 (mm)": pd.Series(default_values, dtype='float64')
 })
 
 with col1:
     st.subheader("📝 数据录入区")
-    st.info("💡 **清空表格**：点击表格任意单元格，按 `Ctrl+A` 全选，再按 `Delete`。\n\n💡 **全部粘贴**：在 Excel 复制多行数据后，**单击选中**下方表格第一列的**第一个单元格**，按 `Ctrl+V`。")
-    
-    # 彻底解除前端限制，允许随意删除、输入空值，全靠后端 Pandas 强行清洗
+    st.info("💡 **清空表格**：点击表格内部，按 `Ctrl+A` 全选，再按 `Delete`。\n\n💡 **全部粘贴**：单击选中下方第一列第一个单元格，按 `Ctrl+V`。")
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
@@ -123,32 +123,29 @@ with col1:
 with col2:
     st.subheader("📊 实时分析图表")
     
-    # 无敌清洗法：无论前端搞得多么支离破碎，这里强行转数字，把空行全部扔掉
+    # 清洗数据
     clean_df = edited_df.apply(pd.to_numeric, errors='coerce').dropna()
 
     current_angles = clean_df["测量角度 (°)"].tolist()
     current_values = clean_df["实测数据 (mm)"].tolist()
     
-    # 只要有数据就画图，没数据就安静地等，绝对不报错
     if len(current_angles) > 0:
-        try:
-            fig = create_radar(report_title, current_angles, current_values, target_val, upper_limit, lower_limit, interval, show_flats, show_pins)
-            
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
-            buf.seek(0)
-            
-            st.pyplot(fig, clear_figure=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            st.download_button(
-                label="⬇️ 一键下载高清分析图 (PNG)",
-                data=buf,
-                file_name=f"{report_title.replace(' ', '_')}_Analysis.png",
-                mime="image/png",
-                use_container_width=True
-            )
-        except Exception as e:
-            st.error("图表渲染暂时中止，请继续完善测量数据。")
+        fig = create_radar(report_title, current_angles, current_values, target_val, upper_limit, lower_limit, interval, show_flats, show_pins)
+        
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+        buf.seek(0)
+        
+        st.pyplot(fig, clear_figure=True)
+        plt.close(fig) # 🌟 释放内存，防止长时间使用导致崩溃 🌟
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        st.download_button(
+            label="⬇️ 一键下载高清分析图 (PNG)",
+            data=buf,
+            file_name=f"{report_title.replace(' ', '_')}_Analysis.png",
+            mime="image/png",
+            use_container_width=True
+        )
     else:
-        st.info("👈 表格已清空。请在左侧输入测量数据，图表将自动生成。")
+        st.info("👈 请在左侧输入测量数据，图表将自动生成。")
