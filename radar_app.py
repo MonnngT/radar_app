@@ -11,7 +11,7 @@ st.title("🎯 通用零部件外径极坐标分析系统")
 # 侧边栏：全局参数设置
 with st.sidebar:
     st.header("⚙️ 基础设置")
-    report_title = st.text_input("图表标题 (Title)", "Outer Diameter Analysis")
+    report_title = st.text_input("图表标题 (Title)", "4ZR Outer Diameter")
     
     st.markdown("---")
     st.header("📏 尺寸标准与公差")
@@ -19,30 +19,26 @@ with st.sidebar:
     upper_limit = st.number_input("公差上限 (Upper Limit)", value=39.30, step=0.01, format="%.2f")
     lower_limit = st.number_input("公差下限 (Lower Limit)", value=39.10, step=0.01, format="%.2f")
     
-    interval = st.number_input("单点代表角度 (度/点)", value=30, step=1)
+    # 4Z 默认数据间距为 28
+    interval = st.number_input("单点代表角度 (度/点)", value=28, step=1)
 
     st.markdown("---")
     st.header("🎨 特征区域遮罩")
     show_flats = st.checkbox("显示平面区域 (上下灰色)", value=True)
-    show_pins = st.checkbox("显示顶针区域 (左右黄色)", value=True)
+    show_pins = st.checkbox("显示顶针区域 (左右黄色)", value=False)
 
 # 核心绘图函数
 def create_radar(title, angles, values, target, upper, lower, interval, show_flats, show_pins):
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
 
-    # 🌟 终极自适应缩放算法：同时包容公差带和所有实测极端数据 🌟
-    min_data = min(values) if values else lower
-    max_data = max(values) if values else upper
+    # 🌟 恢复经典固定比例尺 (完美复刻第二张图的视觉比例) 🌟
+    # 根据上下限固定向外和向内扩展的比例，不再随极端异常数据乱缩放
+    diff = upper - lower
+    if diff <= 0: diff = 0.2
     
-    actual_min = min(lower, min_data)
-    actual_max = max(upper, max_data)
-    
-    span = actual_max - actual_min
-    # 动态留出上下 15% 的空白边缘，且最低保障 0.1 的间距
-    margin = max(span * 0.15, 0.1) 
-    
-    r_min = actual_min - margin
-    r_max = actual_max + margin
+    # 精准映射：当公差为 39.1-39.3 时，这里刚好算出 38.6 和 39.5 的经典边界
+    r_min = lower - diff * 2.5
+    r_max = upper + diff * 1.0
 
     oot_count = sum(1 for v in values if v < lower or v > upper)
     oot_area = oot_count * interval
@@ -67,15 +63,15 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
         a_plot.append(angles[i])
         v_plot.append(values[i])
         if i < len(angles) - 1:
-            diff = abs(angles[i+1] - angles[i])
-            actual_gap = min(diff, 360 - diff)
+            diff_ang = abs(angles[i+1] - angles[i])
+            actual_gap = min(diff_ang, 360 - diff_ang)
             if actual_gap > interval + 2:
                 a_plot.append(angles[i])
                 v_plot.append(np.nan)
 
     if len(angles) > 0:
-        diff = abs(angles[0] - angles[-1])
-        actual_gap = min(diff, 360 - diff)
+        diff_ang = abs(angles[0] - angles[-1])
+        actual_gap = min(diff_ang, 360 - diff_ang)
         if actual_gap > interval + 2:
              a_plot.append(angles[-1])
              v_plot.append(np.nan)
@@ -88,17 +84,16 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 
     for a, v in zip(angles, values):
         color = 'crimson' if (v < lower or v > upper) else 'darkblue'
-        # 标签文字偏移量也改成动态自适应，防止挤在一起
-        offset = margin * 0.25 if v >= target else -margin * 0.35
+        offset = diff * 0.15 if v >= target else -diff * 0.25
         ax.text(np.deg2rad(a), v + offset, f"{v:.2f}", ha='center', va='center', fontsize=11, color=color, fontweight='bold')
 
     ax.set_ylim(r_min, r_max)
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
     
-    tick_step = int(interval) if interval >= 10 else 20
-    ax.set_xticks(np.deg2rad(np.arange(0, 360, tick_step)))
-    ax.set_xticklabels([f"{x}°" for x in np.arange(0, 360, tick_step)], fontsize=10)
+    # 恢复固定 30 度一格的干净网格线
+    ax.set_xticks(np.deg2rad(np.arange(0, 360, 30)))
+    ax.set_xticklabels([f"{x}°" for x in np.arange(0, 360, 30)], fontsize=10)
 
     defect_text = f"OOT Points: {oot_count}\nOOT Area: {oot_area}°\nDefect Ratio: {oot_area}/360 = {oot_percentage:.1f}%"
     plt.figtext(0.0, 1.02, defect_text, fontsize=13, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='bottom', ha='left')
@@ -111,8 +106,9 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-default_angles = ["30", "60", "120", "150", "210", "240", "300", "330"]
-default_values = ["39.08", "39.15", "39.13", "39.21", "39.06", "39.15", "39.17", "39.21"]
+# 默认加载 4ZR 的数据
+default_angles = ["20", "48", "76", "104", "132", "160", "200", "228", "256", "284", "312", "340"]
+default_values = ["39.25", "39.28", "39.30", "39.33", "39.30", "39.25", "38.84", "38.93", "39.07", "39.13", "39.18", "39.36"]
 
 df = pd.DataFrame({
     "测量角度 (°)": default_angles,
@@ -123,6 +119,7 @@ with col1:
     st.subheader("📝 数据录入区")
     st.info("💡 **清空表格**：点表格内部 -> `Ctrl+A` -> `Delete`。\n\n💡 **粘贴数据**：点下方第一列第一个单元格 -> `Ctrl+V`。")
     
+    # 继续使用您觉得顺手且已修复崩溃的文本表格组件
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
