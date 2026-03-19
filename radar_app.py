@@ -30,9 +30,19 @@ with st.sidebar:
 def create_radar(title, angles, values, target, upper, lower, interval, show_flats, show_pins):
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
 
-    margin = max((upper - lower) * 1.5, 0.1) 
-    r_min = lower - margin
-    r_max = upper + margin
+    # 🌟 终极自适应缩放算法：同时包容公差带和所有实测极端数据 🌟
+    min_data = min(values) if values else lower
+    max_data = max(values) if values else upper
+    
+    actual_min = min(lower, min_data)
+    actual_max = max(upper, max_data)
+    
+    span = actual_max - actual_min
+    # 动态留出上下 15% 的空白边缘，且最低保障 0.1 的间距
+    margin = max(span * 0.15, 0.1) 
+    
+    r_min = actual_min - margin
+    r_max = actual_max + margin
 
     oot_count = sum(1 for v in values if v < lower or v > upper)
     oot_area = oot_count * interval
@@ -78,7 +88,8 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 
     for a, v in zip(angles, values):
         color = 'crimson' if (v < lower or v > upper) else 'darkblue'
-        offset = (upper - lower) * 0.15 if v >= target else -(upper - lower) * 0.25
+        # 标签文字偏移量也改成动态自适应，防止挤在一起
+        offset = margin * 0.25 if v >= target else -margin * 0.35
         ax.text(np.deg2rad(a), v + offset, f"{v:.2f}", ha='center', va='center', fontsize=11, color=color, fontweight='bold')
 
     ax.set_ylim(r_min, r_max)
@@ -100,7 +111,6 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-# 🌟 绝杀修复：全部用字符串(String)初始化，彻底绕开 PyArrow 的底层崩溃 Bug
 default_angles = ["30", "60", "120", "150", "210", "240", "300", "330"]
 default_values = ["39.08", "39.15", "39.13", "39.21", "39.06", "39.15", "39.17", "39.21"]
 
@@ -113,7 +123,6 @@ with col1:
     st.subheader("📝 数据录入区")
     st.info("💡 **清空表格**：点表格内部 -> `Ctrl+A` -> `Delete`。\n\n💡 **粘贴数据**：点下方第一列第一个单元格 -> `Ctrl+V`。")
     
-    # 此时在前端看来，这两列就是纯文本，随便怎么删改、输入空白都不会触发类型崩溃
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
@@ -129,7 +138,6 @@ with col2:
     st.subheader("📊 实时分析图表")
     
     try:
-        # 后台强行把用户输入的文本转回数字，如果有乱码、半成品数字，直接变成空值并删掉
         clean_df = edited_df.copy()
         clean_df["测量角度 (°)"] = pd.to_numeric(clean_df["测量角度 (°)"], errors='coerce')
         clean_df["实测数据 (mm)"] = pd.to_numeric(clean_df["实测数据 (mm)"], errors='coerce')
@@ -146,7 +154,7 @@ with col2:
             buf.seek(0)
             
             st.pyplot(fig, clear_figure=True)
-            plt.close(fig) # 释放内存
+            plt.close(fig) 
             st.markdown("<br>", unsafe_allow_html=True)
             
             st.download_button(
