@@ -52,21 +52,17 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
         ax.fill_between(np.linspace(np.deg2rad(70), np.deg2rad(110), 50), r_min, r_max, color='gold', alpha=0.35, label='Pin Area')
         ax.fill_between(np.linspace(np.deg2rad(250), np.deg2rad(290), 50), r_min, r_max, color='gold', alpha=0.35)
 
-    # 🌟 升级版连线逻辑：适应任意输入顺序 🌟
     a_plot, v_plot = [], []
     for i in range(len(angles)):
         a_plot.append(angles[i])
         v_plot.append(values[i])
         if i < len(angles) - 1:
-            # 计算相邻两点的最短圆弧夹角绝对值（解决乱序或跨越 0度 的问题）
             diff = abs(angles[i+1] - angles[i])
             actual_gap = min(diff, 360 - diff)
             if actual_gap > interval + 2:
-                # 夹角过大，插入空值打断连线
                 a_plot.append(angles[i])
                 v_plot.append(np.nan)
 
-    # 处理首尾相连的缺口判断
     if len(angles) > 0:
         diff = abs(angles[0] - angles[-1])
         actual_gap = min(diff, 360 - diff)
@@ -114,27 +110,26 @@ df = pd.DataFrame({
 
 with col1:
     st.subheader("📝 数据录入区")
+    st.info("💡 **清空表格**：点击表格任意单元格，按 `Ctrl+A` 全选，再按 `Delete`。\n\n💡 **全部粘贴**：在 Excel 复制多行数据后，**单击选中**下方表格第一列的**第一个单元格**，按 `Ctrl+V`。")
+    
+    # 彻底解除前端限制，允许随意删除、输入空值，全靠后端 Pandas 强行清洗
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
         use_container_width=True, 
-        hide_index=True,
-        column_config={
-            "测量角度 (°)": st.column_config.NumberColumn("测量角度 (°)", required=True),
-            "实测数据 (mm)": st.column_config.NumberColumn("实测数据 (mm)", required=True, format="%.2f")
-        }
+        hide_index=True
     )
 
 with col2:
     st.subheader("📊 实时分析图表")
     
-    # 清洗逻辑：转纯数字并丢弃空行，**完全保留您的输入顺序**
-    clean_df = edited_df.apply(pd.to_numeric, errors='coerce')
-    clean_df = clean_df.dropna()
+    # 无敌清洗法：无论前端搞得多么支离破碎，这里强行转数字，把空行全部扔掉
+    clean_df = edited_df.apply(pd.to_numeric, errors='coerce').dropna()
 
     current_angles = clean_df["测量角度 (°)"].tolist()
     current_values = clean_df["实测数据 (mm)"].tolist()
     
+    # 只要有数据就画图，没数据就安静地等，绝对不报错
     if len(current_angles) > 0:
         try:
             fig = create_radar(report_title, current_angles, current_values, target_val, upper_limit, lower_limit, interval, show_flats, show_pins)
@@ -154,6 +149,6 @@ with col2:
                 use_container_width=True
             )
         except Exception as e:
-            st.error(f"图表渲染遇到问题，请检查测量数据。错误信息：{e}")
+            st.error("图表渲染暂时中止，请继续完善测量数据。")
     else:
-        st.info("👈 请在左侧表格中输入完整、有效的数字数据，图表将自动生成。")
+        st.info("👈 表格已清空。请在左侧输入测量数据，图表将自动生成。")
