@@ -1,8 +1,8 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import io
+from matplotlib.figure import Figure
 
 # 页面配置
 st.set_page_config(page_title="通用外径极坐标分析系统", layout="wide")
@@ -19,7 +19,6 @@ with st.sidebar:
     upper_limit = st.number_input("公差上限 (Upper Limit)", value=39.30, step=0.01, format="%.2f")
     lower_limit = st.number_input("公差下限 (Lower Limit)", value=39.10, step=0.01, format="%.2f")
     
-    # 4Z 默认数据间距为 28
     interval = st.number_input("单点代表角度 (度/点)", value=28, step=1)
 
     st.markdown("---")
@@ -27,16 +26,14 @@ with st.sidebar:
     show_flats = st.checkbox("显示平面区域 (上下灰色)", value=True)
     show_pins = st.checkbox("显示顶针区域 (左右黄色)", value=False)
 
-# 核心绘图函数
+# 核心绘图函数 (线程安全设计 + 经典图表比例)
 def create_radar(title, angles, values, target, upper, lower, interval, show_flats, show_pins):
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
+    fig = Figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection='polar')
 
-    # 🌟 恢复经典固定比例尺 (完美复刻第二张图的视觉比例) 🌟
-    # 根据上下限固定向外和向内扩展的比例，不再随极端异常数据乱缩放
+    # 🌟 恢复经典固定比例尺 (完美复刻 4ZR 的黄金视觉比例)
     diff = upper - lower
     if diff <= 0: diff = 0.2
-    
-    # 精准映射：当公差为 39.1-39.3 时，这里刚好算出 38.6 和 39.5 的经典边界
     r_min = lower - diff * 2.5
     r_max = upper + diff * 1.0
 
@@ -91,12 +88,11 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
     
-    # 恢复固定 30 度一格的干净网格线
     ax.set_xticks(np.deg2rad(np.arange(0, 360, 30)))
     ax.set_xticklabels([f"{x}°" for x in np.arange(0, 360, 30)], fontsize=10)
 
     defect_text = f"OOT Points: {oot_count}\nOOT Area: {oot_area}°\nDefect Ratio: {oot_area}/360 = {oot_percentage:.1f}%"
-    plt.figtext(0.0, 1.02, defect_text, fontsize=13, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='bottom', ha='left')
+    fig.text(0.0, 1.02, defect_text, fontsize=13, color='darkred', bbox=dict(facecolor='mistyrose', alpha=0.9, edgecolor='red'), va='bottom', ha='left')
 
     ax.set_title(title, va='bottom', fontsize=20, fontweight='bold', pad=40)
     ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.15), fontsize=10)
@@ -106,28 +102,28 @@ def create_radar(title, angles, values, target, upper, lower, interval, show_fla
 # ----------------- 主界面布局 -----------------
 col1, col2 = st.columns([1, 2])
 
-# 默认加载 4ZR 的数据
-default_angles = ["20", "48", "76", "104", "132", "160", "200", "228", "256", "284", "312", "340"]
-default_values = ["39.25", "39.28", "39.30", "39.33", "39.30", "39.25", "38.84", "38.93", "39.07", "39.13", "39.18", "39.36"]
+default_angles = [20.0, 48.0, 76.0, 104.0, 132.0, 160.0, 200.0, 228.0, 256.0, 284.0, 312.0, 340.0]
+default_values = [39.25, 39.28, 39.30, 39.33, 39.30, 39.25, 38.84, 38.93, 39.07, 39.13, 39.18, 39.36]
 
+# 🌟 绝杀崩溃方案：使用 Pandas 的 Float64 (大写F) 允许空值安全存在，不触发崩溃
 df = pd.DataFrame({
-    "测量角度 (°)": default_angles,
-    "实测数据 (mm)": default_values
+    "测量角度 (°)": pd.Series(default_angles, dtype="Float64"),
+    "实测数据 (mm)": pd.Series(default_values, dtype="Float64")
 })
 
 with col1:
     st.subheader("📝 数据录入区")
     st.info("💡 **清空表格**：点表格内部 -> `Ctrl+A` -> `Delete`。\n\n💡 **粘贴数据**：点下方第一列第一个单元格 -> `Ctrl+V`。")
     
-    # 继续使用您觉得顺手且已修复崩溃的文本表格组件
+    # 恢复 NumberColumn，保留了数字的格式保护，防止剪贴板丢失小数点
     edited_df = st.data_editor(
         df, 
         num_rows="dynamic", 
         use_container_width=True, 
         hide_index=True,
         column_config={
-            "测量角度 (°)": st.column_config.TextColumn("测量角度 (°)"),
-            "实测数据 (mm)": st.column_config.TextColumn("实测数据 (mm)")
+            "测量角度 (°)": st.column_config.NumberColumn("测量角度 (°)", format="%.1f"),
+            "实测数据 (mm)": st.column_config.NumberColumn("实测数据 (mm)", format="%.2f")
         }
     )
 
@@ -135,11 +131,8 @@ with col2:
     st.subheader("📊 实时分析图表")
     
     try:
-        clean_df = edited_df.copy()
-        clean_df["测量角度 (°)"] = pd.to_numeric(clean_df["测量角度 (°)"], errors='coerce')
-        clean_df["实测数据 (mm)"] = pd.to_numeric(clean_df["实测数据 (mm)"], errors='coerce')
-        clean_df = clean_df.dropna()
-
+        # 直接丢弃含有空值的行，画出有效数据
+        clean_df = edited_df.dropna()
         current_angles = clean_df["测量角度 (°)"].tolist()
         current_values = clean_df["实测数据 (mm)"].tolist()
         
@@ -150,8 +143,8 @@ with col2:
             fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
             buf.seek(0)
             
-            st.pyplot(fig, clear_figure=True)
-            plt.close(fig) 
+            # 使用面向对象的 fig，告别 plt 导致的线程冲突崩溃
+            st.pyplot(fig)
             st.markdown("<br>", unsafe_allow_html=True)
             
             st.download_button(
@@ -162,7 +155,7 @@ with col2:
                 use_container_width=True
             )
         else:
-            st.info("👈 等待数据录入中... 请在左侧表格输入数字即可生成图表。")
+            st.info("👈 等待数据录入中... 请在左侧表格粘贴数字即可生成图表。")
             
     except Exception as e:
-        st.error("正在等待有效数据输入，请继续...")
+        st.error("后台渲染等待中，请继续操作...")
